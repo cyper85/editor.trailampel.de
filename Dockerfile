@@ -2,6 +2,8 @@
 
 FROM php:apache
 
+LABEL org.opencontainers.image.authors="webmaster@stadtplan-ilmenau.de"
+
 COPY checkout.sh /var/www/
 COPY commit.sh /var/www/
 COPY create.php /var/www/
