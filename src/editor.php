@@ -100,10 +100,10 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
         </tr>
         <tr>
             <th><label for="message" name="message">Message:</label></th>
-            <td><textarea type="text" id="message" cols="5" rows="40"><?= $message ?></textarea></td>
+            <td><textarea type="text" id="message" cols="40" rows="5"><?= $message ?></textarea></td>
         </tr>
         <tr>
-            <th><label for="message" name="message">Last Checkup:</label></th>
+            <th><label for="last_checkup" name="last_checkup">Last Checkup:</label></th>
             <td><input type="date" id="last_checkup" value="<?= $last_checkup ?>" /></td>
         </tr>
         <tr>
