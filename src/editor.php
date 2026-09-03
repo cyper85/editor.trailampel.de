@@ -7,6 +7,7 @@ $trail = "";
 $city = "";
 $status = "";
 $message = "";
+$last_checkup = "";
 if (array_key_exists('zone', $_REQUEST)) {
     $zone = $_REQUEST['zone'];
 }
@@ -29,7 +30,7 @@ if (array_key_exists($city, $trails) && array_key_exists($zone, $trails[$city]) 
         $message = $trails[$city][$zone][$trail]['message'];
     }
     if (array_key_exists('last_checkup', $trails[$city][$zone][$trail])) {
-        $message = $trails[$city][$zone][$trail]['last_checkup'];
+        $last_checkup = $trails[$city][$zone][$trail]['last_checkup'];
     }
 }
 
