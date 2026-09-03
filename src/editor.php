@@ -1,6 +1,6 @@
 <?php
 
-const STATUS = ['ACTIVE', 'WARNING', 'INACTIVE', 'DESTROYED', 'NOT READY'];
+const STATUS = ['ACTIVE', 'WARNING', 'INACTIVE', 'CLOSED', 'DESTROYED', 'NOT READY'];
 const DB_FILENAME = 'sqlite:/var/www/user.sqlite';
 $zone = "";
 $trail = "";
@@ -28,6 +28,9 @@ if (array_key_exists($city, $trails) && array_key_exists($zone, $trails[$city]) 
     if (array_key_exists('message', $trails[$city][$zone][$trail])) {
         $message = $trails[$city][$zone][$trail]['message'];
     }
+    if (array_key_exists('last_checkup', $trails[$city][$zone][$trail])) {
+        $message = $trails[$city][$zone][$trail]['last_checkup'];
+    }
 }
 
 if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)) {
@@ -54,6 +57,11 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
     } else if (array_key_exists('message', $trails[$city][$zone][$trail])) {
         unset($trails[$city][$zone][$trail]['message']);
     }
+    if (array_key_exists('last_checkup', $_POST)) {
+        $trails[$city][$zone][$trail]['last_checkup'] = $_POST['last_checkup'];
+    } else if (array_key_exists('last_checkup', $trails[$city][$zone][$trail])) {
+        unset($trails[$city][$zone][$trail]['last_checkup']);
+    }
 
     file_put_contents($trails_file, json_encode($trails, JSON_PRETTY_PRINT));
     shell_exec('bash /var/www/commit.sh "' . escapeshellarg($_POST['username']) . '" "' . escapeshellarg($trail) . '" 2>&1');
@@ -79,7 +87,7 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
         </tr>
         <tr>
             <th><label for="trail">Trail:</label></th>
-            <td><input type="hidden" id="trail" name="trail" value="<?= $trail ?>"/><?= $zone ?></td>
+            <td><input type="hidden" id="trail" name="trail" value="<?= $trail ?>"/><?= $trail ?></td>
         </tr>
         <tr>
             <th><label for="status">Status:</label></th>
@@ -92,6 +100,10 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
         <tr>
             <th><label for="message" name="message">Message:</label></th>
             <td><textarea type="text" id="message" cols="5" rows="40"><?= $message ?></textarea></td>
+        </tr>
+        <tr>
+            <th><label for="message" name="message">Last Checkup:</label></th>
+            <td><input type="date" id="last_checkup" value="<?= $last_checkup ?>" /></td>
         </tr>
         <tr>
             <td colspan="2">&nbsp;</td>
