@@ -7,7 +7,7 @@ $statement->execute();
 // init
 $statement = $db->prepare('INSERT OR IGNORE INTO user (username, password) VALUES(:username, :password)');
 $file = fopen('/var/www/passwords.csv', 'r');
-while (($line = fgetcsv($file, separator: ';')) !== FALSE) {
+while (($line = fgetcsv($file, separator: ';', enclosure: '"', escape: "\\")) !== FALSE) {
     $statement->bindValue(':username', $line[0]);
     $statement->bindValue(':password', password_hash($line[1], PASSWORD_DEFAULT));
     $statement->execute();
