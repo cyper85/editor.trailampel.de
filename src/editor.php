@@ -82,7 +82,7 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
     <table>
         <tr>
             <th><label for="city">City:</label></th>
-            <td><input type="hidden" id="city" name="city" value="<?= $city ?>"/><?= $city ?>"</td>
+            <td><input type="hidden" id="city" name="city" value="<?= $city ?>"/><?= $city ?></td>
         </tr>
         <tr>
             <th><label for="zone">Zone:</label></th>
