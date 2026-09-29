@@ -69,7 +69,7 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
     file_put_contents($trails_file, json_encode($trails, JSON_PRETTY_PRINT));
     shell_exec('bash /var/www/commit.sh "' . escapeshellarg($_POST['username']) . '" "' . escapeshellarg($trail) . '" 2>&1');
 
-    exit('Speichern erfolgreich. Bis die Website aktualisiert wird, dauert es wenige Minuten.');
+    exit('<html><body><h1>Speichern erfolgreich. Bis die Website aktualisiert wird, dauert es wenige Minuten.</h1><br/><br/><br/><a href="https://trailampel.de">zur&uuml;ck zu trailampel.de</a></body></html>');
 }
 
 ?>
