@@ -42,7 +42,9 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
     $result = $statement->fetch(PDO::FETCH_ASSOC);
     #print_r($result['password']);
     #print_r(array_key_exists('password', $result));
-    if (!array_key_exists('password', $result)) {
+    if ($result === false) {
+        exit('Unbekannter Nutzername');
+    } else if (!array_key_exists('password', $result)) {
         exit('Unbekannter Nutzername');
     } else if (!password_verify($_POST['password'], $result['password'])) {
         exit('Falsches Passwort');
@@ -104,7 +106,7 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
         </tr>
         <tr>
             <th><label for="last_checkup" name="last_checkup">Last Checkup:</label></th>
-            <td><input type="date" id="last_checkup" value="<?= $last_checkup ?>" /></td>
+            <td><input type="date" id="last_checkup" value="<?= $last_checkup ?>"/></td>
         </tr>
         <tr>
             <td colspan="2">&nbsp;</td>
