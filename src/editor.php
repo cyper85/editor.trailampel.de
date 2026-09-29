@@ -55,12 +55,12 @@ if (array_key_exists('username', $_POST) && array_key_exists('password', $_POST)
     $trails_file = '/tmp/editorgit/trails.json';
     $trails = json_decode(file_get_contents($trails_file), associative: true);
     $trails[$city][$zone][$trail]['status'] = $_POST['status'];
-    if (array_key_exists('message', $_POST)) {
+    if (isset($_POST['message'])) {
         $trails[$city][$zone][$trail]['message'] = $_POST['message'];
     } else if (array_key_exists('message', $trails[$city][$zone][$trail])) {
         unset($trails[$city][$zone][$trail]['message']);
     }
-    if (array_key_exists('last_checkup', $_POST)) {
+    if (isset($_POST['last_checkup'])) {
         $trails[$city][$zone][$trail]['last_checkup'] = $_POST['last_checkup'];
     } else if (array_key_exists('last_checkup', $trails[$city][$zone][$trail])) {
         unset($trails[$city][$zone][$trail]['last_checkup']);
