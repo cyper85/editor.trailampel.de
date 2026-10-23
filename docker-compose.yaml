@@ -4,7 +4,6 @@ services:
     ports:
       - '127.0.0.1:6180:80'
     user: www-data
+    env_file: .env
     volumes:
-      - ./passwords.csv:/var/www/passwords.csv:ro
       - ./user.sqlite:/var/www/user.sqlite
-      - ./id_ed25519:/var/www/id_ed25519:ro
