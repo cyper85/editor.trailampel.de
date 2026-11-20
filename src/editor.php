@@ -135,7 +135,7 @@ $zone = param($_REQUEST, 'zone');
 $trail = param($_REQUEST, 'trail');
 
 try {
-    [$trails] = load_trails();
+    $trails = load_trails();
 } catch (GitHubException $e) {
     http_response_code(502);
     render_page('Fehler', '<p class="errors">' . h($e->getMessage()) . '</p>', $user);
@@ -196,6 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!isset($trails[$city][$zone][$trail]) || !is_array($trails[$city][$zone][$trail])) {
                     throw new GitHubException('Der Trail wurde zwischenzeitlich entfernt.');
                 }
+                $old = $trails[$city][$zone][$trail];
                 $entry = &$trails[$city][$zone][$trail];
                 $entry['status'] = $status;
                 // leere Felder entfernen statt als "" zu speichern
@@ -206,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $entry[$key] = $value;
                     }
                 }
-                return $trails;
+                return [$trails, feed_item($city, $zone, $trail, $old, $entry)];
             }, "User: $user Trail: $trail", $user);
         } catch (GitHubException $e) {
             $errors[] = $e->getMessage();

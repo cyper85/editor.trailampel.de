@@ -3,7 +3,7 @@
 Einfacher Web-Editor, mit dem auch Nicht-Programmierer den Status der Trails in der
 `trails.json` von [trailampel.de](https://trailampel.de) pflegen können.
 
-Änderungen werden über die [GitHub Contents API](https://docs.github.com/de/rest/repos/contents)
+Änderungen werden über die [GitHub Git Data API](https://docs.github.com/de/rest/git)
 direkt als Commit in das Repository `cyper85/trailampel.de` geschrieben. Es wird weder
 `git` noch ein SSH-Key benötigt. Die Nutzer des Editors brauchen keinen GitHub-Account.
 
@@ -20,6 +20,18 @@ Ort, Zone und Trail müssen in der `trails.json` existieren, sonst antwortet der
 
 Beim ersten Speichern meldet man sich mit Nutzername und Passwort an und bleibt danach
 30 Tage angemeldet. Der Commit wird mit dem Nutzernamen als Autor angelegt.
+
+## RSS-Feed
+
+Jede Änderung wird zusätzlich in die `feed.xml` (RSS 2.0) im selben Repository eingetragen,
+im selben Commit wie die `trails.json`. Sie ist unter `https://trailampel.de/feed.xml` abrufbar.
+
+- Titel: `[<neuer Status>] <Trail>`
+- Inhalt: Nachricht, Statuswechsel (alt → neu), letzter Check (falls gesetzt) und
+  `Ort › Zone › Trail`
+- Es werden die letzten 50 Änderungen vorgehalten.
+- Speichern ohne Änderung an Status, Nachricht oder Datum erzeugt keinen Eintrag.
+- Fehlt die Datei oder ist sie kaputt, wird sie neu angelegt.
 
 ## Einrichtung
 
@@ -51,6 +63,8 @@ Optionale Einstellungen:
 | `GITHUB_REPO`   | `cyper85/trailampel.de` | Repository mit der trails.json  |
 | `GITHUB_BRANCH` | `main`                  | Branch, auf den committet wird  |
 | `TRAILS_FILE`   | `trails.json`           | Pfad der Datei im Repository    |
+| `FEED_FILE`     | `feed.xml`              | Pfad des RSS-Feeds im Repository |
+| `SITE_URL`      | `https://trailampel.de` | Basis-URL für Links im Feed     |
 | `AUTHOR_EMAIL`  | `editor@trailampel.de`  | E-Mail-Adresse des Commit-Autors |
 | `GITHUB_API`    | `https://api.github.com`| API-URL (nur für Tests)         |
 

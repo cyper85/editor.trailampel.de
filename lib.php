@@ -6,6 +6,7 @@ const LOGIN_MAX_FAILURES = 5;
 const LOGIN_LOCK_SECONDS = 900;
 const SAVE_ATTEMPTS = 3;
 const SESSION_LIFETIME = 30 * 24 * 3600;
+const FEED_MAX_ITEMS = 50;
 
 class GitHubException extends RuntimeException
 {
@@ -54,63 +55,231 @@ function github_request(string $method, string $path, ?array $body = null): arra
     return [$status, json_decode($response, associative: true) ?? []];
 }
 
-function contents_path(): string
+function repo_path(string $path): string
 {
-    return '/repos/' . config('GITHUB_REPO', 'cyper85/trailampel.de') . '/contents/' . config('TRAILS_FILE', 'trails.json');
+    return '/repos/' . config('GITHUB_REPO', 'cyper85/trailampel.de') . $path;
+}
+
+function trails_file(): string
+{
+    return config('TRAILS_FILE', 'trails.json');
+}
+
+function feed_file(): string
+{
+    return config('FEED_FILE', 'feed.xml');
 }
 
 /**
- * @return array{0: array, 1: string} trails und sha der aktuellen Dateiversion
+ * @return string|null Dateiinhalt im angegebenen Stand, null wenn die Datei nicht existiert
  */
+function load_file(string $file, string $ref): ?string
+{
+    [$status, $data] = github_request('GET', repo_path('/contents/' . $file . '?ref=' . rawurlencode($ref)));
+    if ($status === 404) {
+        return null;
+    }
+    if ($status !== 200) {
+        throw new GitHubException("Laden von $file fehlgeschlagen (HTTP $status): " . ($data['message'] ?? ''));
+    }
+    return base64_decode($data['content']);
+}
+
+function parse_trails(?string $json): array
+{
+    $trails = $json === null ? null : json_decode($json, associative: true);
+    if (!is_array($trails)) {
+        throw new GitHubException(trails_file() . ' fehlt oder ist kein gültiges JSON.');
+    }
+    return $trails;
+}
+
 function load_trails(): array
 {
-    $branch = config('GITHUB_BRANCH', 'main');
-    [$status, $data] = github_request('GET', contents_path() . '?ref=' . rawurlencode($branch));
-    if ($status !== 200) {
-        throw new GitHubException("Laden fehlgeschlagen (HTTP $status): " . ($data['message'] ?? ''));
-    }
-    $trails = json_decode(base64_decode($data['content']), associative: true);
-    if (!is_array($trails)) {
-        throw new GitHubException('trails.json ist kein gültiges JSON.');
-    }
-    return [$trails, $data['sha']];
+    return parse_trails(load_file(trails_file(), config('GITHUB_BRANCH', 'main')));
 }
 
 /**
- * @return bool false, wenn die Datei zwischenzeitlich geändert wurde (sha veraltet)
+ * @return array{0: string, 1: string} sha des aktuellen Commits auf dem Branch und dessen Tree
  */
-function save_trails(array $trails, string $sha, string $message, string $author): bool
+function load_head(): array
 {
-    $json = json_encode($trails, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    [$status, $data] = github_request('PUT', contents_path(), [
+    $branch = config('GITHUB_BRANCH', 'main');
+    [$status, $ref] = github_request('GET', repo_path('/git/ref/heads/' . $branch));
+    if ($status !== 200) {
+        throw new GitHubException("Branch $branch nicht gefunden (HTTP $status): " . ($ref['message'] ?? ''));
+    }
+    $commit_sha = $ref['object']['sha'];
+    [$status, $commit] = github_request('GET', repo_path('/git/commits/' . $commit_sha));
+    if ($status !== 200) {
+        throw new GitHubException("Commit nicht lesbar (HTTP $status): " . ($commit['message'] ?? ''));
+    }
+    return [$commit_sha, $commit['tree']['sha']];
+}
+
+/**
+ * Schreibt mehrere Dateien in einem Commit.
+ *
+ * @param array<string, string> $files Pfad => Inhalt
+ * @return bool false, wenn der Branch zwischenzeitlich weitergewandert ist
+ */
+function commit_files(string $parent, string $base_tree, array $files, string $message, string $author): bool
+{
+    $tree = [];
+    foreach ($files as $path => $content) {
+        $tree[] = ['path' => $path, 'mode' => '100644', 'type' => 'blob', 'content' => $content];
+    }
+    [$status, $data] = github_request('POST', repo_path('/git/trees'), ['base_tree' => $base_tree, 'tree' => $tree]);
+    if ($status !== 201) {
+        throw new GitHubException("Speichern fehlgeschlagen (Tree, HTTP $status): " . ($data['message'] ?? ''));
+    }
+    [$status, $data] = github_request('POST', repo_path('/git/commits'), [
         'message' => $message,
-        'content' => base64_encode($json),
-        'sha' => $sha,
-        'branch' => config('GITHUB_BRANCH', 'main'),
+        'tree' => $data['sha'],
+        'parents' => [$parent],
         'author' => ['name' => $author, 'email' => config('AUTHOR_EMAIL', 'editor@trailampel.de')],
     ]);
-    if ($status === 409) {
+    if ($status !== 201) {
+        throw new GitHubException("Speichern fehlgeschlagen (Commit, HTTP $status): " . ($data['message'] ?? ''));
+    }
+    [$status, $data] = github_request('PATCH', repo_path('/git/refs/heads/' . config('GITHUB_BRANCH', 'main')), [
+        'sha' => $data['sha'],
+        'force' => false,
+    ]);
+    if ($status === 422 && str_contains(strtolower($data['message'] ?? ''), 'fast forward')) {
         return false;
     }
-    if ($status !== 200 && $status !== 201) {
+    if ($status !== 200) {
         throw new GitHubException("Speichern fehlgeschlagen (HTTP $status): " . ($data['message'] ?? ''));
     }
     return true;
 }
 
 /**
- * Lädt die aktuelle trails.json, wendet $modify an und speichert. Hat jemand
- * anderes zwischenzeitlich gespeichert, wird die Änderung neu angewendet.
+ * Lädt die aktuelle trails.json, wendet $modify an und speichert sie zusammen mit dem
+ * fortgeschriebenen RSS-Feed in einem Commit. Hat jemand anderes zwischenzeitlich
+ * gespeichert, wird die Änderung neu angewendet.
+ *
+ * @param callable(array): array{0: array, 1: ?array} $modify liefert die neuen Trails und
+ *        optional einen Feed-Eintrag (siehe feed_item())
  */
 function update_trails(callable $modify, string $message, string $author): void
 {
     for ($i = 0; $i < SAVE_ATTEMPTS; $i++) {
-        [$trails, $sha] = load_trails();
-        if (save_trails($modify($trails), $sha, $message, $author)) {
+        [$commit, $tree] = load_head();
+        [$trails, $item] = $modify(parse_trails(load_file(trails_file(), $commit)));
+        $files = [trails_file() => json_encode($trails, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
+        if ($item !== null) {
+            $files[feed_file()] = add_feed_item(load_file(feed_file(), $commit), $item);
+        }
+        if (commit_files($commit, $tree, $files, $message, $author)) {
             return;
         }
     }
     throw new GitHubException('Die Datei wurde gleichzeitig mehrfach geändert. Bitte erneut speichern.');
+}
+
+// ---------------------------------------------------------------------------
+// RSS-Feed
+// ---------------------------------------------------------------------------
+
+function site_url(): string
+{
+    return rtrim(config('SITE_URL', 'https://trailampel.de'), '/') . '/';
+}
+
+function format_date(string $date): string
+{
+    $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+    return $parsed === false ? $date : $parsed->format('d.m.Y');
+}
+
+/**
+ * Baut einen Feed-Eintrag aus dem alten und neuen Stand eines Trails.
+ * Liefert null, wenn sich nichts geändert hat.
+ *
+ * @return array{title: string, description: string}|null
+ */
+function feed_item(string $city, string $zone, string $trail, array $old, array $new): ?array
+{
+    $fields = ['status', 'message', 'last_checkup'];
+    $changed = array_filter($fields, fn($f) => ($old[$f] ?? '') !== ($new[$f] ?? ''));
+    if (!$changed) {
+        return null;
+    }
+    $e = fn(string $value) => htmlspecialchars($value, ENT_QUOTES | ENT_XML1);
+    $old_status = $old['status'] ?? '';
+    $new_status = $new['status'];
+
+    $html = '';
+    if (($new['message'] ?? '') !== '') {
+        $html .= '<p>' . nl2br($e($new['message'])) . '</p>';
+    }
+    $html .= '<p>';
+    $html .= $old_status === $new_status
+        ? 'Status: ' . $e($new_status) . ' (unverändert)'
+        : 'Status: ' . $e($old_status) . ' → ' . $e($new_status);
+    if (($new['last_checkup'] ?? '') !== '') {
+        $html .= '<br>Letzter Check: ' . $e(format_date($new['last_checkup']));
+    }
+    $html .= '<br>' . $e($city) . ' › ' . $e($zone) . ' › ' . $e($trail) . '</p>';
+
+    return ['title' => "[$new_status] $trail", 'description' => $html];
+}
+
+function new_feed(): DOMDocument
+{
+    $doc = new DOMDocument('1.0', 'UTF-8');
+    $rss = $doc->appendChild($doc->createElement('rss'));
+    $rss->setAttribute('version', '2.0');
+    $rss->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:atom', 'http://www.w3.org/2005/Atom');
+    $channel = $rss->appendChild($doc->createElement('channel'));
+    $channel->appendChild($doc->createElement('title', 'Trail Ampel'));
+    $channel->appendChild($doc->createElement('link', site_url()));
+    $channel->appendChild($doc->createElement('description', 'Statusänderungen der MTB Trails'));
+    $channel->appendChild($doc->createElement('language', 'de'));
+    $self = $channel->appendChild($doc->createElementNS('http://www.w3.org/2005/Atom', 'atom:link'));
+    $self->setAttribute('href', site_url() . feed_file());
+    $self->setAttribute('rel', 'self');
+    $self->setAttribute('type', 'application/rss+xml');
+    return $doc;
+}
+
+/**
+ * Stellt den Eintrag an den Anfang des Feeds und kürzt ihn auf FEED_MAX_ITEMS Einträge.
+ */
+function add_feed_item(?string $xml, array $item): string
+{
+    $doc = new DOMDocument();
+    $doc->preserveWhiteSpace = false;
+    if ($xml === null || !@$doc->loadXML($xml) || $doc->getElementsByTagName('channel')->length === 0) {
+        $doc = new_feed();
+    }
+    $doc->formatOutput = true;
+    $channel = $doc->getElementsByTagName('channel')->item(0);
+    $now = date(DATE_RSS);
+
+    $last_build = $channel->getElementsByTagName('lastBuildDate')->item(0);
+    if ($last_build === null) {
+        $last_build = $channel->appendChild($doc->createElement('lastBuildDate'));
+    }
+    $last_build->textContent = $now;
+
+    $node = $doc->createElement('item');
+    $node->appendChild($doc->createElement('title'))->textContent = $item['title'];
+    $node->appendChild($doc->createElement('link'))->textContent = site_url();
+    $node->appendChild($doc->createElement('description'))->textContent = $item['description'];
+    $node->appendChild($doc->createElement('pubDate'))->textContent = $now;
+    $guid = $node->appendChild($doc->createElement('guid'));
+    $guid->setAttribute('isPermaLink', 'false');
+    $guid->textContent = 'trailampel-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
+
+    $items = $channel->getElementsByTagName('item');
+    $channel->insertBefore($node, $items->item(0));
+    while ($items->length > FEED_MAX_ITEMS) {
+        $channel->removeChild($items->item($items->length - 1));
+    }
+    return $doc->saveXML();
 }
 
 // ---------------------------------------------------------------------------
